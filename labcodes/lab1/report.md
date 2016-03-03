@@ -216,3 +216,89 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 		c
 
 2. `make debug`，即停在`bootmain.c`中的`bootmain(void)`入口处。
+
+## [练习3] 分析bootloader进入保护模式的过程 ##
+
+#### 1. 为何开启A20，以及如何开启A20 ####
+
+早期（80286之前）的系统总线仅20根，只能访问2<sup>20</sup> = 1MB内存空间。A20门意为第21根总线（从0计数），是IBM使用键盘控制器上剩余的一些输出线来管理的这第21根地址线，若A20门被禁止，则访问地址高于20位的部分自动置零，故能兼容之前的机器。刚加电时A20被禁止，为了启用所有系统总线，需要打开A20门。
+
+开启方式：
+
+	seta20.1:
+	    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+	    testb $0x2, %al
+	    jnz seta20.1
+	
+	    movb $0xd1, %al                                 # 0xd1 -> port 0x64
+	    outb %al, $0x64                                 # 0xd1 means: write data to 8042's P2 port
+	
+	seta20.2:
+	    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+	    testb $0x2, %al
+	    jnz seta20.2
+	
+	    movb $0xdf, %al                                 # 0xdf -> port 0x60
+	    outb %al, $0x60                                 # 0xdf = 11011111, means set P2's A20 bit(the 1 bit) to 1
+
+#### 2. 如何初始化GDT表 ####
+
+通过`lgdt(Load GDT)`语句载入GDT表：
+
+	lgdt gdtdesc
+
+`gdtdesc`的定义是：
+
+	# Bootstrap GDT
+	.p2align 2                                          # force 4 byte alignment
+	gdt:
+	    SEG_NULLASM                                     # null seg
+	    SEG_ASM(STA_X|STA_R, 0x0, 0xffffffff)           # code seg for bootloader and kernel
+	    SEG_ASM(STA_W, 0x0, 0xffffffff)                 # data seg for bootloader and kernel
+	
+	gdtdesc:
+	    .word 0x17                                      # sizeof(gdt) - 1
+	    .long gdt                                       # address gdt	
+
+#### 3. 如何使能和进入保护模式 ####
+
+1. 进入保护模式
+	
+	开CR0寄存器PE位（置1）：
+
+		movl %cr0, %eax
+		orl $CR0_PE_ON, %eax
+		movl %eax, %cr0
+
+2. 切换32位模式
+
+	其中`ljmp`的格式是`ljmp 段选择子 段内偏移`，这个长跳转相当于把原本20位的pc扩展为32位
+
+		    # Jump to next instruction, but in 32-bit code segment.
+		    # Switches processor into 32-bit mode.
+		    ljmp $PROT_MODE_CSEG, $protcseg
+		
+		.code32                                             # Assemble for 32-bit mode
+		protcseg:
+
+3. 设置数据段寄存器
+
+		.code32                                             # Assemble for 32-bit mode
+		protcseg:
+		    # Set up the protected-mode data segment registers
+		    movw $PROT_MODE_DSEG, %ax                       # Our data segment selector
+		    movw %ax, %ds                                   # -> DS: Data Segment
+		    movw %ax, %es                                   # -> ES: Extra Segment
+		    movw %ax, %fs                                   # -> FS
+		    movw %ax, %gs                                   # -> GS
+		    movw %ax, %ss                                   # -> SS: Stack Segment
+
+4. 建立堆栈
+
+		    # Set up the stack pointer and call into C. The stack region is from 0--start(0x7c00)
+		    movl $0x0, %ebp
+		    movl $start, %esp
+
+5. 进入保护模式完成，调用`boot/bootmain.c`中的`bootmain`方法
+
+		call bootmain
