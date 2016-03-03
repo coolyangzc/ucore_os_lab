@@ -2,9 +2,9 @@
 ---
 ## [练习1] ##
 
-### 1. 操作系统镜像文件ucore.img是如何一步一步生成的？(需要比较详细地解释Makefile中每一条相关命令和命令参数的含义，以及说明命令导致的结果) ###
+#### 1. 操作系统镜像文件ucore.img是如何一步一步生成的？(需要比较详细地解释Makefile中每一条相关命令和命令参数的含义，以及说明命令导致的结果) ####
 
-分析`labcodes\lab1\`下的`Makefile文件`：
+分析`labcodes/lab1/`下的`Makefile文件`：
 
 	ALLOBJS	:=
 	ALLDEPS	:=
@@ -116,3 +116,23 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 	CC		:= $(GCCPREFIX)gcc
 	CFLAGS	:= -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc $(DEFS)
 	CFLAGS	+= $(shell $(CC) -fno-stack-protector -E -x c /dev/null 
+
+#### 2. 一个被系统认为是符合规范的硬盘主引导扇区的特征是什么？ ####
+
+分析`lab1/tools/sign.c`：
+
+1. 主引导扇区大小为512字节：
+
+		char buf[512]; 
+
+2. 主引导扇区以0x55AA结尾：
+
+		buf[510] = 0x55;
+		buf[511] = 0xAA;
+
+3. 故装载的文件大小不能超过510字节：
+
+		if (st.st_size > 510) {
+	        fprintf(stderr, "%lld >> 510!!\n", (long long)st.st_size);
+	        return -1;
+	    }
