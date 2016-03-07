@@ -434,4 +434,4 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
     movl $start, %esp
     call bootmain
 
-函数调用时，先保存ebp的值（进栈），然后保存eip的值，然后将调用的参数亚入栈中。
+函数调用时，先将调用的参数压入栈中，然后保存eip的值（即Return Address），最后保存ebp的值。此时被调用的函数的ebp指向该处，就构成了一个函数调用栈。
