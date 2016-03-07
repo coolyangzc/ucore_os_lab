@@ -156,7 +156,7 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 		$(V)sleep 2
 		$(V)$(TERMINAL)  -e "cgdb -q -x tools/gdbinit"
 
-	大意为启动qemu，等待2s，然后开启另一个终端调用gdb，gdb直接执行tools/gdbinit中的内容
+	大意为启动qemu，等待2s，然后开启另一个终端调用gdb，gdb直接执行`tools/gdbinit`中的内容
 
 3. 因为BIOS并非使用c语言所写，所以在gdb中暂时只能使用`ni(nexti)`或`si(stepi)`进行汇编指令层级的单步调试
 
@@ -221,7 +221,7 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 
 #### 1. 为何开启A20，以及如何开启A20 ####
 
-早期（80286之前）的系统总线仅20根，只能访问2<sup>20</sup> = 1MB内存空间。A20门意为第21根总线（从0计数），是IBM使用键盘控制器上剩余的一些输出线来管理的这第21根地址线，若A20门被禁止，则访问地址高于20位的部分自动置零，故能兼容之前的机器。刚加电时A20被禁止，为了启用所有系统总线，需要打开A20门。
+早期（80286之前）的系统总线仅20根，只能访问2<sup>20</sup> = 1MB内存空间。A20门意为第21根总线（从0计数），是IBM使用键盘控制器上剩余的一些输出线来管理的这第21根地址线，若A20门被禁止就能兼容之前的机器。刚加电时A20被禁止，为了启用所有系统总线，需要打开A20门。
 
 开启方式：
 
@@ -302,3 +302,136 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 5. 进入保护模式完成，调用`boot/bootmain.c`中的`bootmain`方法
 
 		call bootmain
+
+## [练习4] 分析bootloader加载ELF格式的OS的过程 ##
+
+#### 1. bootloader如何读取硬盘扇区的？ ####
+
+`/boot/bootmain.c`中的`readsect`过程：
+
+	//将secno扇区读取到dst指针所指的位置
+	static void
+	readsect(void *dst, uint32_t secno) {
+	    // wait for disk to be ready
+	    waitdisk();
+	
+	    outb(0x1F2, 1);                         // count = 1
+	    outb(0x1F3, secno & 0xFF);
+	    outb(0x1F4, (secno >> 8) & 0xFF);
+	    outb(0x1F5, (secno >> 16) & 0xFF);
+	    outb(0x1F6, ((secno >> 24) & 0xF) | 0xE0);
+	    outb(0x1F7, 0x20);                      // cmd 0x20 - read sectors
+	
+	    // wait for disk to be ready
+	    waitdisk();
+	
+	    // read a sector
+	    insl(0x1F0, dst, SECTSIZE / 4);
+	}
+
+其中`waitdisk`通过调用inb不断读取直到成功：
+
+	static void
+	waitdisk(void) {
+	    while ((inb(0x1F7) & 0xC0) != 0x40)
+	        /* do nothing */;
+	}
+
+#### 2. bootloader是如何加载ELF格式的OS？ ####
+	
+`/boot/bootmain.c`中的`bootmain`过程：
+
+	/* bootmain - the entry of bootloader */
+	void
+	bootmain(void) {
+	    // read the 1st page off disk 读取ELF文件的第一页
+	    readseg((uintptr_t)ELFHDR, SECTSIZE * 8, 0);
+	
+	    // is this a valid ELF? 通过约定常数检查文件类型
+	    if (ELFHDR->e_magic != ELF_MAGIC) {
+	        goto bad;
+	    }
+	
+	    struct proghdr *ph, *eph;
+	
+	    // load each program segment (ignores ph flags)
+	    //ph是每一个Program Header的指针
+	    ph = (struct proghdr *)((uintptr_t)ELFHDR + ELFHDR->e_phoff);
+	    //eph等于ph加上Program Header的数目，相当于最后一项后的位置
+	    eph = ph + ELFHDR->e_phnum;
+	    for (; ph < eph; ph ++) {
+	        readseg(ph->p_va & 0xFFFFFF, ph->p_memsz, ph->p_offset);
+	    }
+	
+	    // call the entry point from the ELF header 跳转到ucore，转交控制权
+	    // note: does not return
+	    ((void (*)(void))(ELFHDR->e_entry & 0xFFFFFF))();
+	
+	bad:
+	    outw(0x8A00, 0x8A00);
+	    outw(0x8A00, 0x8E00);
+	
+	    /* do nothing */
+	    while (1);
+	}
+
+## [练习5] 实现函数调用堆栈跟踪函数 ##
+
+添加代码如下：
+	
+	void
+	print_stackframe(void) {
+	     /* LAB1 YOUR CODE : STEP 1 */
+	     /* (1) call read_ebp() to get the value of ebp. the type is (uint32_t);
+	      * (2) call read_eip() to get the value of eip. the type is (uint32_t);
+	      * (3) from 0 .. STACKFRAME_DEPTH
+	      *    (3.1) printf value of ebp, eip
+	      *    (3.2) (uint32_t)calling arguments [0..4] = the contents in address (unit32_t)ebp +2 [0..4]
+	      *    (3.3) cprintf("\n");
+	      *    (3.4) call print_debuginfo(eip-1) to print the C calling function name and line number, etc.
+	      *    (3.5) popup a calling stackframe
+	      *           NOTICE: the calling funciton's return addr eip  = ss:[ebp+4]
+	      *                   the calling funciton's ebp = ss:[ebp]
+	      */
+	    uint32_t ebp = read_ebp();
+	    uint32_t eip = read_eip();
+	    while (ebp > 0) {
+	        cprintf("ebp:0x%08x eip:0x%08x args:", ebp, eip);
+	        uint32_t *stk = (uint32_t*) ebp + 2;
+	        int i;
+	        for (i = 0; i < 4 ; i++)
+	            cprintf("0x%08x ", *(stk+i));
+	        cprintf("\n");
+	        print_debuginfo(eip - 1);
+	        eip = *((uint32_t*) ebp + 1);
+	        ebp = *((uint32_t*) ebp);
+	    }
+	}
+
+输出结果如下，与题面中的要求大致相同：
+
+	ebp:0x00007b08 eip:0x001009a6 args:0x00010094 0x00000000 0x00007b38 0x00100092 
+	    kern/debug/kdebug.c:306: print_stackframe+21
+	ebp:0x00007b18 eip:0x00100c84 args:0x00000000 0x00000000 0x00000000 0x00007b88 
+	    kern/debug/kmonitor.c:125: mon_backtrace+10
+	ebp:0x00007b38 eip:0x00100092 args:0x00000000 0x00007b60 0xffff0000 0x00007b64 
+	    kern/init/init.c:48: grade_backtrace2+33
+	ebp:0x00007b58 eip:0x001000bb args:0x00000000 0xffff0000 0x00007b84 0x00000029 
+	    kern/init/init.c:53: grade_backtrace1+38
+	ebp:0x00007b78 eip:0x001000d9 args:0x00000000 0x00100000 0xffff0000 0x0000001d 
+	    kern/init/init.c:58: grade_backtrace0+23
+	ebp:0x00007b98 eip:0x001000fe args:0x001032dc 0x001032c0 0x0000130a 0x00000000 
+	    kern/init/init.c:63: grade_backtrace+34
+	ebp:0x00007bc8 eip:0x00100055 args:0x00000000 0x00000000 0x00000000 0x00010094 
+	    kern/init/init.c:28: kern_init+84
+	ebp:0x00007bf8 eip:0x00007d68 args:0xc031fcfa 0xc08ed88e 0x64e4d08e 0xfa7502a8 
+	    <unknow>: -- 0x00007d67 --
+
+最后一行是第一个使用堆栈（调用函数）的函数，即`bootmain`，其`ebp`为`0x00007bf8`，与`boot/bootasm.S`中设置的堆栈起始位置`0x7c00`相符：
+
+    # Set up the stack pointer and call into C. The stack region is from 0--start(0x7c00)
+    movl $0x0, %ebp
+    movl $start, %esp
+    call bootmain
+
+函数调用时，先保存ebp的值（进栈），然后保存eip的值，然后将调用的参数亚入栈中。
