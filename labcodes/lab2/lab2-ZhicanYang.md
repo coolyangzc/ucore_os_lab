@@ -156,3 +156,41 @@
 #### 3. 如果ucore执行过程中访问内存，出现了页访问异常，请问硬件要做哪些事情？ ####
 
 硬件要触发中断，生成对应的中断向量，然后递交给操作系统软件处理。
+
+## [练习3] 释放某虚地址所在的页并取消对应二级页表项的映射 ##
+
+#### 1. 简要说明你的设计实现过程 ####
+
+`kern/mm/pmm.c`中的`page_remove_pte`：
+
+	static inline void
+	page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
+	    if (*ptep & PTE_P) {
+	        struct Page *page = pte2page(*ptep);
+	        if (!page_ref_dec(page))
+	            free_page(page);
+	        *ptep = 0;
+	        tlb_invalidate(pgdir, la);
+	    }
+	}
+
+#### 2. 数据结构Page的全局变量（其实是一个数组）的每一项与页表中的页目录项和页表项有无对应关系？如果有，其对应关系是啥？ ####
+
+`kern/mm/pmm.c`中的`page_init`里有如下语句：
+
+    npage = maxpa / PGSIZE;
+    pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
+
+    for (i = 0; i < npage; i ++) {
+        SetPageReserved(pages + i);
+    }
+
+    uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
+
+易得`struct Page *pages`与页表之间有关系，`pages`至`pages+npage`为管理页级物理内存空间所需的Page结构的内存空间。
+
+#### 3. 如果希望虚拟地址与物理地址相等，则需要如何修改lab2，完成此事？ ####
+
+修改`alloc_pages`，使得分配时找与虚拟地址相同的物理地址所在的页，并分配该页。
+
+这样做类似于Cache中的直接映像，冲突（无法分配）的概率大大增加。
