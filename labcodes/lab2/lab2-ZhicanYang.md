@@ -84,7 +84,7 @@
 	    nr_free += n;
 	}
 
-在我的实现中，不区分初始化和释放操作，所以我删掉了`default_init_memmap`将`default_pmm_manager`中的函数指针`.init_memmap`与`.free_pages`一同指向`default_free_pages`：
+在我的实现中，不区分初始化和释放操作，所以我删掉了`default_init_memmap`函数，然后将`default_pmm_manager`中的函数指针`.init_memmap`与`.free_pages`一同指向`default_free_pages`：
 
 	const struct pmm_manager default_pmm_manager = {
 	    .name = "default_pmm_manager",
@@ -102,3 +102,57 @@
 有。可以使用平衡树或分块策略代替循环双向循环链表维护空闲页块，加速分配和释放时的定位操作。
 
 ## [练习2] 实现寻找虚拟地址对应的页表项 ##
+
+#### 1. 简要说明你的设计实现过程 ####
+
+`kern/mm/pmm.c`中的`get_pte`：
+
+	pde_t *pdep = &pgdir[PDX(la)];
+	    if (!(*pdep & PTE_P)) {
+	        if (!create) return NULL;
+	        struct Page *new_page = alloc_page();
+	        if (new_page == NULL) return NULL;
+	        set_page_ref(new_page, 1);
+	        uintptr_t pa = page2pa(new_page);
+	        memset(KADDR(pa), 0, PGSIZE);
+	        *pdep = pa | PTE_USER;
+	    }
+	    pte_t *ptep = KADDR(PDE_ADDR(*pdep));
+	    return ptep + PTX(la);
+	}
+
+1. 根据线性地址`la`高10位`PDX(la)`，查询PDT得到页目录项`pdep`
+2. 如果该页不在内存中（即`pdep`的`PTE_P`为0）	
+	1. 如果不允许`create`，返回`NULL`
+	2. 分配一页`alloc_page`，如果分配失败，返回`NULL`
+	3. 置新分配的页被映射1次。
+	4. 清空新分配的页，并置位`PTE_USER`（即`PTE_P | PTE_W | PTE_U`）
+	5. 使`pdep`为新分配的页
+3. 根据页目录项`pdep`获取二级页表`ptep`
+4. 根据线性地址`la`中10位`PTX(la)`，返回二级页表中对应位置的页表
+
+#### 2. 请描述页目录项（Page Director Entry）和页表（Page Table Entry）中每个组成部分的含义以及对ucore而言的潜在用处。 ####
+
+>页目录项内容 = (页表起始物理地址 &0x0FFF) | PTE_U | PTE_W | PTE_P
+>
+>页表项内容 = (pa & ~0x0FFF) | PTE_P | PTE_W
+
+各位含义可参见`kern/mm/mmu.h`：
+
+	/* page table/directory entry flags */
+	#define PTE_P           0x001                   // Present
+	#define PTE_W           0x002                   // Writeable
+	#define PTE_U           0x004                   // User
+	#define PTE_PWT         0x008                   // Write-Through
+	#define PTE_PCD         0x010                   // Cache-Disable
+	#define PTE_A           0x020                   // Accessed
+	#define PTE_D           0x040                   // Dirty
+	#define PTE_PS          0x080                   // Page Size
+	#define PTE_MBZ         0x180                   // Bits must be zero
+	#define PTE_AVAIL       0xE00                   // Available for software use
+	                                                // The PTE_AVAIL bits aren't used by the kernel or interpreted by the
+	                                                // hardware, so user processes are allowed to set them arbitrarily.
+
+#### 3. 如果ucore执行过程中访问内存，出现了页访问异常，请问硬件要做哪些事情？ ####
+
+硬件要触发中断，生成对应的中断向量，然后递交给操作系统软件处理。
