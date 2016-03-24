@@ -133,7 +133,7 @@
 
 #### 2. 请描述页目录项（Page Director Entry）和页表（Page Table Entry）中每个组成部分的含义以及对ucore而言的潜在用处。 ####
 
->页目录项内容 = (页表起始物理地址 &0x0FFF) | PTE_U | PTE_W | PTE_P
+>页目录项内容 = (页表起始物理地址 & ~0x0FFF) | PTE_U | PTE_W | PTE_P
 >
 >页表项内容 = (pa & ~0x0FFF) | PTE_P | PTE_W
 
