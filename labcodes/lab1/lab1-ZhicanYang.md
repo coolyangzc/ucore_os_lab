@@ -497,6 +497,21 @@ Makefile中指令前加`@`即运行时不输出该语句本身，可通过`make 
 	        }
 	        break;
 
+## [扩展练习1] ##
+#### 增加syscall功能，即增加一用户态函数（可执行一特定系统调用：获得时钟计数值），当内核初始完毕后，可从内核态返回到用户态的函数，而用户态的函数又通过系统调用得到内核态的服务 ####
+
+`lab1_switch_to_user`和`lab1_switch_to_kernel`函数通过触发对应的`T_SWITCH_TOU`和`T_SWITCH_TOK`中断实现。
+
+使用户态获得调用`T_SWITCH_TOK`中断的权限，修改`idt_init`：
+
+	for (i = 0; i < 256; i++)
+	        SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
+	    SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
+	    SETGATE(idt[T_SWITCH_TOK], 0, GD_KTEXT, __vectors[T_SWITCH_TOK], DPL_USER);
+
+中断处理通过修改`trapframe`的各个值实现。
+
+
 ## 我的实现与参考答案的区别 ##
 
 在练习6的第2问中，参考答案没有将系统调用中断`T_SYSCALL`设置权限为用户态，也没有使用陷阱门描述符。我添加如下语句：
