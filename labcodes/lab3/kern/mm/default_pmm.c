@@ -65,21 +65,6 @@ default_init(void) {
     nr_free = 0;
 }
 
-static void
-default_init_memmap(struct Page *base, size_t n) {
-    assert(n > 0);
-    struct Page *p = base;
-    for (; p != base + n; p ++) {
-        assert(PageReserved(p));
-        p->flags = p->property = 0;
-        set_page_ref(p, 0);
-    }
-    base->property = n;
-    SetPageProperty(base);
-    nr_free += n;
-    list_add(&free_list, &(base->page_link));
-}
-
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
@@ -104,6 +89,7 @@ default_alloc_pages(size_t n) {
         if (page->property > n) {
             struct Page *newPage = page + n;
             newPage->property = page->property - n;
+            SetPageProperty(newPage);
             page->property = n;
             list_add(&page->page_link, &(newPage->page_link));
         }

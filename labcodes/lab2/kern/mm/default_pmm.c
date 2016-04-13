@@ -89,6 +89,7 @@ default_alloc_pages(size_t n) {
         if (page->property > n) {
             struct Page *newPage = page + n;
             newPage->property = page->property - n;
+            SetPageProperty(newPage);
             page->property = n;
             list_add(&page->page_link, &(newPage->page_link));
         }
@@ -266,3 +267,4 @@ const struct pmm_manager default_pmm_manager = {
     .nr_free_pages = default_nr_free_pages,
     .check = default_check,
 };
+
