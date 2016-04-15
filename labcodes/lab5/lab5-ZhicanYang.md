@@ -175,9 +175,9 @@
 	      +                                          + proc_run +
 	      V                                          +-->---->--+ 
 	PROC_UNINIT(创建) -- proc_init/wakeup_proc --> PROC_RUNNABLE(就绪) -- try_free_pages/do_wait/do_sleep --> PROC_SLEEPING（等待） --
-	                                           ^      +                                                                            +
+	                                           ^      +                                                                             +
 	                                           |      +--- do_exit --> PROC_ZOMBIE(僵尸)                                            +  
-	                                           +                                                                                   + 
+	                                           +                                                                                    + 
 	                                           ---------------------------------------wakeup_proc-----------------------------------
 
 ## 我的实现与参考答案的区别 ##
