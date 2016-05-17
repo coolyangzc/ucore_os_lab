@@ -100,6 +100,11 @@ schedule(void) {
 }
 
 void
+sched_proc_tick(void) {
+	sched_class_proc_tick(current);
+}
+// add timer to timer_list
+void
 add_timer(timer_t *timer) {
     bool intr_flag;
     local_intr_save(intr_flag);
